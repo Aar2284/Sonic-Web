@@ -1,4 +1,3 @@
-streamlit
-spotipy
-plotly
+Flask
+psycopg2-binary
 pandas
