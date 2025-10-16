@@ -1,3 +1,6 @@
 Flask
-psycopg2-binary
-pandas
+spotipy
+networkx
+pyvis
+python-dotenv
+python-louvain
