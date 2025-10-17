@@ -1,70 +1,102 @@
-import streamlit as st
+# app.py
+import os
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
-from datetime import datetime
+from flask import Flask, render_template, request, jsonify
+from dotenv import load_dotenv
+import json
 
-# --- PAGE CONFIGURATION ---
-st.set_page_config(
-    page_title="Musical Time Machine",
-    page_icon="⌛",
-    layout="wide",
-)
-
-# --- AUTHENTICATION (THE SIMPLE, WORKING METHOD) ---
-# This method does not require user login and is perfect for public data.
-# It will not cause any more 403 Forbidden errors.
-def get_spotipy_client():
-    auth_manager = SpotifyClientCredentials(
-        client_id=st.secrets["SPOTIPY_CLIENT_ID"],
-        client_secret=st.secrets["SPOTIPY_CLIENT_SECRET"],
-    )
-    return spotipy.Spotify(auth_manager=auth_manager)
+load_dotenv()
+app = Flask(__name__)
 
 try:
-    sp = get_spotipy_client()
+    auth_manager = SpotifyClientCredentials()
+    sp = spotipy.Spotify(auth_manager=auth_manager)
+    print("Spotify authentication successful.")
 except Exception as e:
-    st.error("Authentication failed. Please check your Client ID and Secret in secrets.toml.")
-    st.stop()
+    sp = None
 
+@app.route('/')
+def index():
+    return render_template('index.html')
 
-# --- APP UI ---
-st.title("⌛ Musical Time Machine")
-st.write("Enter any year to see the top hits from that time.")
+@app.route('/api/generate-network', methods=['POST'])
+def generate_network():
+    if not sp:
+        return jsonify({"error": "Spotify service is not available."}), 500
 
-# Get the current year
-current_year = datetime.now().year
+    artist_name = request.json.get('artist_name')
+    if not artist_name:
+        return jsonify({"error": "Artist name is required."}), 400
 
-# Year selection
-year = st.number_input(
-    "Enter a year",
-    min_value=1950,
-    max_value=current_year,
-    value=current_year - 1 # Default to last year
-)
-
-if st.button("Travel to Year!", use_container_width=True):
     try:
-        with st.spinner(f"Searching for the top hits of {year}..."):
-            # Use a smarter search query to get relevant songs
-            query = f'year:{year}'
-            results = sp.search(q=query, type='track', limit=10, offset=0)
+        results = sp.search(q=f'artist:{artist_name}', type='artist', limit=1)
+        if not results['artists']['items']:
+            return jsonify({"error": f"Artist '{artist_name}' not found."}), 404
+        
+        main_artist = results['artists']['items'][0]
+        main_artist_id = main_artist['id']
+        main_artist_name = main_artist['name']
+
+        # --- Prepare data for the frontend ---
+        nodes = []
+        edges = []
+        node_data_for_flashcard = {}
+
+        # Add main artist node
+        main_artist_image = main_artist['images'][0]['url'] if main_artist['images'] else None
+        nodes.append({'id': main_artist_name, 'shape': 'image', 'image': main_artist_image, 'size': 30, 'borderWidth': 4, 'color': {'border': '#1DB954'}})
+
+        # Deep scan for collaborators
+        collaborations = {}
+        offset = 0
+        limit = 50
+        while len(collaborations) < 50:
+            albums_response = sp.artist_albums(main_artist_id, album_type='album,single', limit=limit, offset=offset)
+            if not albums_response['items']: break
+            for album in albums_response['items']:
+                tracks = sp.album_tracks(album['id'])['items']
+                for track in tracks:
+                    if len(track['artists']) > 1:
+                        for artist in track['artists']:
+                            if artist['name'] != main_artist_name:
+                                collaborator_name = artist['name']
+                                if collaborator_name not in collaborations: collaborations[collaborator_name] = []
+                                track_image = album['images'][0]['url'] if album['images'] else ''
+                                collaborations[collaborator_name].append({ "name": track['name'], "image": track_image })
+                                if len(collaborations) >= 50: break
+                if len(collaborations) >= 50: break
+            offset += limit
+        
+        # Process collaborators
+        for collaborator_name, tracks in collaborations.items():
+            collab_image_url = ''
+            try:
+                collab_results = sp.search(q=f'artist:{collaborator_name}', type='artist', limit=1)
+                if collab_results['artists']['items'] and collab_results['artists']['items'][0]['images']:
+                    collab_image_url = collab_results['artists']['items'][0]['images'][0]['url']
+            except Exception: pass
             
-            if not results['tracks']['items']:
-                st.warning(f"Could not find any top tracks for the year {year}.")
-            else:
-                st.subheader(f"Top Hits from {year}")
-                
-                # Display results in columns for a clean look
-                cols = st.columns(5)
-                for i, track in enumerate(results['tracks']['items'][:5]):
-                    with cols[i]:
-                        if track['album']['images']:
-                            st.image(track['album']['images'][0]['url'], use_column_width=True)
-                        st.write(f"**{track['name']}**")
-                        st.caption(track['artists'][0]['name'])
-                        if track['preview_url']:
-                            st.audio(track['preview_url'])
+            nodes.append({'id': collaborator_name, 'shape': 'image' if collab_image_url else 'dot', 'image': collab_image_url, 'size': 20, 'color': '#1DB954' if not collab_image_url else None})
+            edges.append({'from': main_artist_name, 'to': collaborator_name, 'color': '#cccccc'})
+            
+            # THE FIX IS HERE: We have removed the sorted() function
+            node_data_for_flashcard[collaborator_name] = {"name": collaborator_name, "image": collab_image_url, "tracks": tracks}
+
+        # Return pure JSON data for the frontend to render
+        return jsonify({
+            "success": True,
+            "graph_data": {
+                "nodes": nodes,
+                "edges": edges
+            },
+            "flashcard_data": node_data_for_flashcard
+        })
 
     except Exception as e:
-        st.error("An error occurred while fetching data. Spotify's API might be temporarily down.")
-        st.exception(e)
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(debug=True)
