@@ -1,1 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Sonic Web</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>The Sonic Web</h1>
+            <p>Enter an artist's name to visualize their musical influence network.</p>
+        </header>
 
+        <div class="search-container">
+            <input type="text" id="artist-input" placeholder="e.g., Daft Punk">
+            <button id="visualize-btn">Visualize</button>
+        </div>
+
+        <div id="status-message"></div>
+        
+        <div class="main-content">
+            <div id="graph-container"></div>
+            <div id="flashcard-panel" class="hidden">
+                <button id="close-panel-btn">&times;</button>
+                <div id="flashcard-content"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const artistInput = document.getElementById('artist-input');
+        const visualizeBtn = document.getElementById('visualize-btn');
+        const statusMessage = document.getElementById('status-message');
+        const graphContainer = document.getElementById('graph-container');
+        const flashcardPanel = document.getElementById('flashcard-panel');
+        const flashcardContent = document.getElementById('flashcard-content');
+        const closePanelBtn = document.getElementById('close-panel-btn');
+
+        let flashcardData = {};
+        let network = null;
+
+        visualizeBtn.addEventListener('click', generateGraph);
+        artistInput.addEventListener('keyup', (e) => e.key === 'Enter' && generateGraph());
+        closePanelBtn.addEventListener('click', () => flashcardPanel.classList.add('hidden'));
+
+        async function generateGraph() {
+            const artistName = artistInput.value.trim();
+            if (!artistName) return;
+
+            statusMessage.textContent = 'Performing deep scan of artist discography...';
+            statusMessage.className = 'loading';
+            visualizeBtn.disabled = true;
+            if (network) network.destroy();
+            graphContainer.innerHTML = '<div class="spinner"></div>'; // Show spinner
+            flashcardPanel.classList.add('hidden');
+
+            try {
+                const response = await fetch('/api/generate-network', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ artist_name: artistName })
+                });
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    statusMessage.textContent = `Successfully generated graph. Click a node for details.`;
+                    statusMessage.className = 'success';
+                    flashcardData = data.flashcard_data;
+                    renderGraph(data.graph_data);
+                } else {
+                    statusMessage.textContent = `Error: ${data.error}`;
+                    statusMessage.className = 'error';
+                    graphContainer.innerHTML = '';
+                }
+            } catch (error) {
+                statusMessage.textContent = 'A network error occurred.';
+                statusMessage.className = 'error';
+                graphContainer.innerHTML = '';
+            } finally {
+                visualizeBtn.disabled = false;
+            }
+        }
+
+        function renderGraph(graphData) {
+            const options = {
+                nodes: {
+                    borderWidth: 4,
+                    color: { border: '#282828', background: '#535353' },
+                    font: { color: '#ffffff', size: 14 },
+                },
+                edges: {
+                    color: 'rgba(255, 255, 255, 0.2)',
+                    smooth: { type: 'continuous' }
+                },
+                physics: {
+                    barnesHut: {
+                        gravitationalConstant: -40000,
+                        centralGravity: 0.1,
+                        springLength: 200,
+                        springConstant: 0.05
+                    },
+                    stabilization: { iterations: 1500 },
+                },
+            };
+            network = new vis.Network(graphContainer, graphData, options);
+
+            network.on("click", function (params) {
+                if (params.nodes.length > 0) {
+                    const nodeId = params.nodes[0];
+                    displayFlashcard(nodeId);
+                }
+            });
+        }
+        
+        function displayFlashcard(artistId) {
+            const data = flashcardData[artistId];
+            if (!data) return;
+
+            let html = `
+                <div class="flashcard-header">
+                    <img src="${data.image || 'https://via.placeholder.com/64'}" alt="${data.name}">
+                    <h4>${data.name}</h4>
+                </div>
+                <div class="track-list">
+            `;
+
+            data.tracks.forEach(track => {
+                html += `
+                    <div class="track-item">
+                        <img src="${track.image || 'https://via.placeholder.com/40'}" alt="Track art">
+                        <div class="track-info">
+                            <strong>${track.name}</strong>
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += `</div>`;
+            flashcardContent.innerHTML = html;
+            flashcardPanel.classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
