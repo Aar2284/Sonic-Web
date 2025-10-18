@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>The Sonic Web</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
-</head>
+    <link rel="stylesheet" href="{{ url_for('static', filename='artist_network.css') }}">
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    </head>
 <body>
     <div class="container">
         <header>
@@ -16,131 +16,148 @@
 
         <div class="search-container">
             <input type="text" id="artist-input" placeholder="e.g., Daft Punk">
-            <button id="visualize-btn">Visualize</button>
+            <button id="search-btn">Search</button>
         </div>
 
         <div id="status-message"></div>
         
         <div class="main-content">
-            <div id="graph-container"></div>
+            <div class="graph-container" id="graph-container">
+                <iframe id="graph-iframe" srcdoc="" frameborder="0"></iframe>
+            </div>
             <div id="flashcard-panel" class="hidden">
                 <button id="close-panel-btn">&times;</button>
                 <div id="flashcard-content"></div>
+            </div>
+        </div>
+
+        <div id="charts-container" class="hidden">
+            <div id="popularity-chart" class="chart-box"></div>
+            <div id="dna-chart" class="chart-box"></div>
+        </div>
+
+        <div id="modal-overlay" class="hidden">
+            <div id="modal-content">
+                <h2>Did you mean...?</h2>
+                <div id="artist-results-list"></div>
+                <button id="close-modal-btn">Cancel</button>
             </div>
         </div>
     </div>
 
     <script>
         const artistInput = document.getElementById('artist-input');
-        const visualizeBtn = document.getElementById('visualize-btn');
+        const searchBtn = document.getElementById('search-btn');
         const statusMessage = document.getElementById('status-message');
-        const graphContainer = document.getElementById('graph-container');
+        const graphIframe = document.getElementById('graph-iframe');
+        const chartsContainer = document.getElementById('charts-container');
+        const modalOverlay = document.getElementById('modal-overlay');
+        const artistResultsList = document.getElementById('artist-results-list');
+        const closeModalBtn = document.getElementById('close-modal-btn');
         const flashcardPanel = document.getElementById('flashcard-panel');
         const flashcardContent = document.getElementById('flashcard-content');
         const closePanelBtn = document.getElementById('close-panel-btn');
 
-        let flashcardData = {};
-        let network = null;
+        let flashcardData = {}; // Store data for flashcards
 
-        visualizeBtn.addEventListener('click', generateGraph);
-        artistInput.addEventListener('keyup', (e) => e.key === 'Enter' && generateGraph());
+        searchBtn.addEventListener('click', searchForArtist);
+        artistInput.addEventListener('keyup', (e) => e.key === 'Enter' && searchForArtist());
+        closeModalBtn.addEventListener('click', () => modalOverlay.classList.add('hidden'));
         closePanelBtn.addEventListener('click', () => flashcardPanel.classList.add('hidden'));
 
-        async function generateGraph() {
+        // Listen for messages from the iframe (graph)
+        window.addEventListener('message', (event) => {
+            if (event.data.type === 'node_clicked') {
+                displayFlashcard(event.data.nodeId);
+            }
+        });
+
+        async function searchForArtist() {
+            // ... (searchForArtist function remains the same) ...
             const artistName = artistInput.value.trim();
             if (!artistName) return;
-
-            statusMessage.textContent = 'Performing deep scan of artist discography...';
+            statusMessage.textContent = `Searching for "${artistName}"...`;
             statusMessage.className = 'loading';
-            visualizeBtn.disabled = true;
-            if (network) network.destroy();
-            graphContainer.innerHTML = '<div class="spinner"></div>'; // Show spinner
+            searchBtn.disabled = true;
+            graphIframe.srcdoc = ''; // Clear graph
+            chartsContainer.classList.add('hidden');
+            flashcardPanel.classList.add('hidden'); // Hide flashcard
+
+            try {
+                const response = await fetch('/api/search-artist', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ artist_name: artistName }) });
+                const data = await response.json();
+                if (response.ok && data.success) {
+                    if (data.artists.length === 0) { statusMessage.textContent = `No artists found.`; statusMessage.className = 'error'; }
+                    else if (data.artists.length === 1) { getNetworkForId(data.artists[0].id); }
+                    else { displayArtistChoices(data.artists); statusMessage.textContent = ''; }
+                } else { statusMessage.textContent = `Error: ${data.error}`; statusMessage.className = 'error'; }
+            } catch (error) { statusMessage.textContent = 'Network error.'; statusMessage.className = 'error'; }
+            finally { searchBtn.disabled = false; }
+        }
+
+        function displayArtistChoices(artists) {
+            // ... (displayArtistChoices function remains the same) ...
+            artistResultsList.innerHTML = '';
+            artists.forEach(artist => {
+                const artistDiv = document.createElement('div');
+                artistDiv.className = 'artist-choice-item';
+                artistDiv.innerHTML = `<img src="${artist.image || 'https://via.placeholder.com/50'}" alt="${artist.name}"><div class="artist-choice-info"><strong>${artist.name}</strong><span>${artist.genres.join(', ') || 'N/A'}</span></div><span class="popularity-score">Pop: ${artist.popularity}</span>`;
+                artistDiv.addEventListener('click', () => { modalOverlay.classList.add('hidden'); getNetworkForId(artist.id); });
+                artistResultsList.appendChild(artistDiv);
+            });
+            modalOverlay.classList.remove('hidden');
+        }
+
+        async function getNetworkForId(artistId) {
+            statusMessage.textContent = 'Performing deep scan...';
+            statusMessage.className = 'loading';
+            graphIframe.srcdoc = '<div class="spinner"></div>'; // Show spinner inside iframe area
+            chartsContainer.classList.add('hidden');
             flashcardPanel.classList.add('hidden');
 
             try {
-                const response = await fetch('/api/generate-network', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ artist_name: artistName })
-                });
+                const response = await fetch('/api/generate-network', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ artist_id: artistId }) });
                 const data = await response.json();
-
                 if (response.ok && data.success) {
-                    statusMessage.textContent = `Successfully generated graph. Click a node for details.`;
+                    statusMessage.textContent = `Graph generated. Click collaborator for details.`;
                     statusMessage.className = 'success';
-                    flashcardData = data.flashcard_data;
-                    renderGraph(data.graph_data);
-                } else {
-                    statusMessage.textContent = `Error: ${data.error}`;
-                    statusMessage.className = 'error';
-                    graphContainer.innerHTML = '';
-                }
-            } catch (error) {
-                statusMessage.textContent = 'A network error occurred.';
-                statusMessage.className = 'error';
-                graphContainer.innerHTML = '';
-            } finally {
-                visualizeBtn.disabled = false;
-            }
-        }
-
-        function renderGraph(graphData) {
-            const options = {
-                nodes: {
-                    borderWidth: 4,
-                    color: { border: '#282828', background: '#535353' },
-                    font: { color: '#ffffff', size: 14 },
-                },
-                edges: {
-                    color: 'rgba(255, 255, 255, 0.2)',
-                    smooth: { type: 'continuous' }
-                },
-                physics: {
-                    barnesHut: {
-                        gravitationalConstant: -40000,
-                        centralGravity: 0.1,
-                        springLength: 200,
-                        springConstant: 0.05
-                    },
-                    stabilization: { iterations: 1500 },
-                },
-            };
-            network = new vis.Network(graphContainer, graphData, options);
-
-            network.on("click", function (params) {
-                if (params.nodes.length > 0) {
-                    const nodeId = params.nodes[0];
-                    displayFlashcard(nodeId);
-                }
-            });
+                    graphIframe.srcdoc = data.graph_html; // Load graph HTML into iframe
+                    flashcardData = data.flashcard_data; // Store flashcard data
+                    if (data.chart_data) {
+                        renderCharts(data.chart_data, data.artist_name);
+                        chartsContainer.classList.remove('hidden');
+                    }
+                } else { statusMessage.textContent = `Error: ${data.error}`; statusMessage.className = 'error'; graphIframe.srcdoc = ''; }
+            } catch (error) { statusMessage.textContent = 'Network error.'; statusMessage.className = 'error'; graphIframe.srcdoc = ''; }
         }
         
         function displayFlashcard(artistId) {
             const data = flashcardData[artistId];
-            if (!data) return;
+            if (!data) return; // Only show for collaborators with data
 
-            let html = `
-                <div class="flashcard-header">
-                    <img src="${data.image || 'https://via.placeholder.com/64'}" alt="${data.name}">
-                    <h4>${data.name}</h4>
-                </div>
-                <div class="track-list">
-            `;
-
+            // Build HTML without popularity
+            let html = `<div class="flashcard-header"><img src="${data.image || 'https://via.placeholder.com/64'}" alt="${data.name}"><h4>${data.name}</h4></div><div class="track-list">`;
             data.tracks.forEach(track => {
-                html += `
-                    <div class="track-item">
-                        <img src="${track.image || 'https://via.placeholder.com/40'}" alt="Track art">
-                        <div class="track-info">
-                            <strong>${track.name}</strong>
-                        </div>
-                    </div>
-                `;
+                html += `<div class="track-item"><img src="${track.image || 'https://via.placeholder.com/40'}" alt="Track art"><div class="track-info"><strong>${track.name}</strong></div></div>`;
             });
-
             html += `</div>`;
+            
             flashcardContent.innerHTML = html;
-            flashcardPanel.classList.remove('hidden');
+            flashcardPanel.classList.remove('hidden'); // Show the panel
+        }
+
+        function renderCharts(chartData, artistName) {
+            // ... (Plotly chart rendering code remains the same) ...
+            const years = chartData.map(d => d.year);
+            const popularity = chartData.map(d => d.popularity);
+            const danceability = chartData.map(d => d.danceability);
+            const energy = chartData.map(d => d.energy);
+            const valence = chartData.map(d => d.valence);
+            const plotlyLayout = { paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: '#282828', font: { color: '#ffffff' }, xaxis: { gridcolor: '#404040' }, yaxis: { gridcolor: '#404040' }, legend: { orientation: 'h', y: 1.15 } };
+            const popularityTrace = { x: years, y: popularity, mode: 'lines+markers', name: 'Popularity', line: { color: '#1DB954' } };
+            Plotly.newPlot('popularity-chart', [popularityTrace], { ...plotlyLayout, title: `<b>${artistName}'s Career Popularity</b>`, yaxis: { title: 'Avg. Popularity Score' } });
+            const dnaTraces = [ { x: years, y: danceability, mode: 'lines', name: 'Danceability', line: { color: '#00BFFF' } }, { x: years, y: energy, mode: 'lines', name: 'Energy', line: { color: '#FF4500' } }, { x: years, y: valence, mode: 'lines', name: 'Valence', line: { color: '#FFD700' } } ];
+            Plotly.newPlot('dna-chart', dnaTraces, { ...plotlyLayout, title: `<b>${artistName}'s Sound Evolution</b>`, yaxis: { title: 'Avg. Feature Score' } });
         }
     </script>
 </body>
