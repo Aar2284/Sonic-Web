@@ -1,11 +1,11 @@
 
 # 🕸️ Sonic Web 🎵
 
-[![Python Badge](https://img.shields.io/badge/Python-3.11-9f9f9f?style=for-the-badge&logo=python&logoColor=white&labelColor=3776AB)](https://www.python.org/)
-[![Flask Badge](https://img.shields.io/badge/Flask-3.1.2-9f9f9f?style=for-the-badge&logo=flask&logoColor=white&labelColor=000000)](https://flask.palletsprojects.com/)
-[![HTML5 Badge](https://img.shields.io/badge/HTML-5-9f9f9f?style=for-the-badge&logo=html5&logoColor=white&labelColor=E34F26)](https://developer.mozilla.org/en-US/docs/Web/Guide/HTML/HTML5)
-[![CSS3 Badge](https://img.shields.io/badge/CSS-3-9f9f9f?style=for-the-badge&logo=css3&logoColor=white&labelColor=1572B6)](https://developer.mozilla.org/en-US/docs/Web/CSS)
-[![Spotify Badge](https://img.shields.io/badge/Spotify-API-9f9f9f?style=for-the-badge&logo=spotify&logoColor=white&labelColor=1DB954)](https://developer.spotify.com/)
+[![Python Badge](https://img.shields.io/badge/Python-3.11-lightgray?style=for-the-badge&logo=python&logoColor=white&labelColor=3776AB)](https://www.python.org/)
+[![Flask Badge](https://img.shields.io/badge/Flask-3.1.2-lightgray?style=for-the-badge&logo=flask&logoColor=white&labelColor=000000)](https://flask.palletsprojects.com/)
+[![HTML5 Badge](https://img.shields.io/badge/HTML-5-lightgray?style=for-the-badge&logo=html5&logoColor=white&labelColor=E34F26)](https://developer.mozilla.org/en-US/docs/Web/Guide/HTML/HTML5)
+[![CSS3 Badge](https://img.shields.io/badge/CSS-3-lightgray?style=for-the-badge&logo=css3&logoColor=white&labelColor=1572B6)](https://developer.mozilla.org/en-US/docs/Web/CSS)
+[![Spotify Badge](https://img.shields.io/badge/Spotify-API-lightgray?style=for-the-badge&logo=spotify&logoColor=white&labelColor=1DB954)](https://developer.spotify.com/)
 
 Sonic Web is a dynamic web application that weaves a visual network of interconnected artists straight from the Spotify universe 🎶. Input an artist and watch as it maps out a graph of related musicians, offering a unique and interactive way to discover new music.
 
